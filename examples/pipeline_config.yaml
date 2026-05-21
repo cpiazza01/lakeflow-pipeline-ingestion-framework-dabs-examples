@@ -30,6 +30,7 @@ github_repo: github.com/your-org/dlt-dabs-framework-examples
 email_notifications:
   - codypiazza@example.com
 
+
 email_on_pipeline_success: true
 email_on_job_success: true
 
