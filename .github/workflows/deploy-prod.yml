@@ -1,0 +1,49 @@
+name: Deploy → prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: 'Bundle folder to deploy (e.g. examples)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "deploy" to confirm production deployment'
+        required: true
+        type: string
+
+permissions:
+  id-token: write   # required to request the GitHub OIDC token
+  contents: read
+
+jobs:
+  deploy-prod:
+    name: Deploy → prod
+    # Requires the confirmation input to equal "deploy" — guards against
+    # accidental triggers from the GitHub UI.
+    if: github.event.inputs.confirm == 'deploy'
+    runs-on: ubuntu-latest
+    environment: prod   # configure required reviewers on this GitHub Environment for an extra gate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: databricks/setup-cli@main
+
+      - name: Install DLT framework
+        run: pip install -r requirements.txt
+
+      - name: Generate bundle artifacts
+        working-directory: ${{ github.event.inputs.bundle }}
+        run: lakeflow-generate --config pipeline_config.yaml --env prod
+
+      - name: Deploy
+        working-directory: ${{ github.event.inputs.bundle }}
+        env:
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+        run: databricks bundle deploy --target prod

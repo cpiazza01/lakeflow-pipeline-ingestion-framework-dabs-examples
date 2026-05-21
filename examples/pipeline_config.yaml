@@ -1,0 +1,443 @@
+# ==============================================================================
+# pipeline_config.yaml — Incremental Ingestion from a Databricks Volume
+#
+# Demonstrates two incremental patterns reading Synthea CSV files directly
+# from a Unity Catalog Volume:
+#
+#   1. SCD Type 1 (upsert)     — patients.csv   → members_current silver table
+#   2. Streaming (append-only) — encounters.csv → encounters silver table
+#
+# Sample data lives in lakeflow-pipeline-ingestion-framework-examples/sample-data/ — drop each date
+# subfolder into the corresponding Volume path to simulate daily file arrivals:
+#   /Volumes/enterprise_${env}/staging/example_raw_files_volume/patients/
+#   /Volumes/enterprise_${env}/staging/example_raw_files_volume/encounters/
+#
+# Usage:
+#   lakeflow-generate --config pipeline_config.yaml --env dev
+#   databricks bundle deploy --target dev
+#
+# ${env} is substituted by lakeflow-generate at generation time and must match
+# the --target flag passed to databricks bundle deploy.
+# ==============================================================================
+
+pipeline_name: lakeflow_pipeline_ingestion_framework_examples
+project: dlt-framework-examples
+github_repo: github.com/your-org/dlt-dabs-framework-examples
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+email_notifications:
+  - codypiazza@example.com
+
+email_on_pipeline_success: true
+email_on_job_success: true
+
+expectations_report_emails: 
+  - codypiazza@gmail.com
+
+# ---------------------------------------------------------------------------
+# Optional features
+# ---------------------------------------------------------------------------
+enable_expectations_report: true
+
+trigger_downstream_job: false
+downstream_job_id: null
+downstream_job_parameters: {}
+
+# ---------------------------------------------------------------------------
+# Scheduling
+#
+# Unity Catalog Volumes do not support file-arrival triggers (those require
+# a direct cloud storage URL). A daily cron schedule aligns with the expected
+# once-per-day file delivery cadence.
+# ---------------------------------------------------------------------------
+# schedule:
+#   quartz_cron_expression: "0 0 6 * * ?"   # 6:00 AM UTC daily
+#   timezone_id: America/Chicago
+#   pause_status: UNPAUSED
+
+file_trigger: null
+
+# ---------------------------------------------------------------------------
+# Access control
+# ---------------------------------------------------------------------------
+pipeline_access_group: null
+service_principal_job_runners: []
+
+# ---------------------------------------------------------------------------
+# Unity Catalog tags applied to all tables in this pipeline
+# ---------------------------------------------------------------------------
+tags:
+  Project: "dlt-framework-examples"
+  DataDomain: "ClinicalOperations"
+  DataSource: "Synthea"
+
+# ---------------------------------------------------------------------------
+# Schema locations (also configurable as DABs variables in databricks.yml)
+# ---------------------------------------------------------------------------
+audit_schema: audit
+
+# ==============================================================================
+# Pipeline Definitions
+# ==============================================================================
+
+pipelines:
+
+  # --------------------------------------------------------------------------
+  # 1. PATIENTS → MEMBERS — SCD Type 1 (incremental upsert)
+  #
+  # Source: Synthea patients.csv (used directly — no conversion needed).
+  # Each daily snapshot is a full export. Records are upserted using Id as
+  # the CDC key. source_file_modification_time is used as the sequence
+  # column — it is set when the file lands in the Volume, so it remains
+  # stable across full pipeline reloads unlike dbx_load_time.
+  #
+  # PII columns (SSN, ADDRESS) are masked via Unity Catalog masking functions.
+  # --------------------------------------------------------------------------
+  - bronze_table_name: "enterprise_${env}.bronze.patients"
+    silver_table_name: "enterprise_${env}.silver.patients"
+    table_type: "scd1"
+    source_path: "/Volumes/enterprise_${env}/staging/example_raw_files_volume/patients"
+    source_file_type: "csv"
+    csv_options:
+      header: true
+      delimiter: ","
+    description: "Current member records — upserted daily from Synthea patient snapshots."
+    cdc_conf:
+      keys: ["member_id"]
+      sequence_by: "source_file_modification_time"
+    columns:
+      - source: "Id"
+        target: "member_id"
+        target_datatype: "STRING"
+        comment: "Synthea patient UUID (CDC key)"
+      - source: "FIRST"
+        target: "first_name"
+        target_datatype: "STRING"
+        comment: "First name"
+      - source: "LAST"
+        target: "last_name"
+        target_datatype: "STRING"
+        comment: "Last name"
+      - source: "BIRTHDATE"
+        target: "date_of_birth"
+        target_datatype: "DATE"
+        comment: "Date of birth"
+      - source: "DEATHDATE"
+        target: "death_date"
+        target_datatype: "DATE"
+        comment: "Date of death; null if patient is living"
+      - source: "SSN"
+        target: "ssn"
+        target_datatype: "STRING"
+        comment: "Social security number (masked)"
+      - source: "GENDER"
+        target: "gender"
+        target_datatype: "STRING"
+        comment: "M or F"
+      - source: "RACE"
+        target: "race"
+        target_datatype: "STRING"
+        comment: "Patient-reported race"
+      - source: "ETHNICITY"
+        target: "ethnicity"
+        target_datatype: "STRING"
+        comment: "Patient-reported ethnicity"
+      - source: "MARITAL"
+        target: "marital_status"
+        target_datatype: "STRING"
+        comment: "M (married) or S (single)"
+      - source: "ADDRESS"
+        target: "address"
+        target_datatype: "STRING"
+        comment: "Street address (masked)"
+      - source: "CITY"
+        target: "city"
+        target_datatype: "STRING"
+        comment: "City of residence"
+      - source: "STATE"
+        target: "state"
+        target_datatype: "STRING"
+        comment: "State of residence"
+      - source: "COUNTY"
+        target: "county"
+        target_datatype: "STRING"
+        comment: "County of residence"
+      - source: "ZIP"
+        target: "zip"
+        target_datatype: "STRING"
+        comment: "ZIP code"
+      - source: "HEALTHCARE_EXPENSES"
+        target: "healthcare_expenses"
+        target_datatype: "DECIMAL(18,2)"
+        comment: "Total lifetime healthcare costs to patient"
+      - source: "HEALTHCARE_COVERAGE"
+        target: "healthcare_coverage"
+        target_datatype: "DECIMAL(18,2)"
+        comment: "Total lifetime coverage paid by payers"
+      - source: "INCOME"
+        target: "income"
+        target_datatype: "DECIMAL(18,2)"
+        comment: "Annual patient income"
+    expectations:
+      - name: "member_id_not_null"
+        condition: "member_id IS NOT NULL"
+        action: "FAIL UPDATE"
+      - name: "valid_gender"
+        condition: "gender IN ('M', 'F')"
+        action: "WARN"
+    column_masks:
+      - column: ssn
+        function: enterprise_${env}.functions.mask_ssn
+      - column: address
+        function: enterprise_${env}.functions.mask_pii_string
+
+  # --------------------------------------------------------------------------
+  # 2. ENCOUNTERS — Streaming (append-only)
+  #
+  # Source: Synthea encounters.csv (used directly — no conversion needed).
+  # Each daily file contains new encounter records only — no overlaps between
+  # files. Records are appended directly to the silver table.
+  # This table joins to members_current on member_id in downstream DBT models.
+  # --------------------------------------------------------------------------
+  - bronze_table_name: "enterprise_${env}.bronze.encounters"
+    silver_table_name: "enterprise_${env}.silver.encounters"
+    table_type: "streaming"
+    source_path: "/Volumes/enterprise_${env}/staging/example_raw_files_volume/encounters"
+    source_file_type: "csv"
+    csv_options:
+      header: true
+      delimiter: ","
+    description: "Patient encounters — append-only from daily Synthea encounter files."
+    columns:
+      - source: "Id"
+        target: "encounter_id"
+        target_datatype: "STRING"
+        comment: "Synthea encounter UUID"
+      - source: "PATIENT"
+        target: "member_id"
+        target_datatype: "STRING"
+        comment: "FK to members_current.member_id"
+      - source: "ORGANIZATION"
+        target: "organization_id"
+        target_datatype: "STRING"
+        comment: "UUID of the care organization"
+      - source: "PROVIDER"
+        target: "provider_id"
+        target_datatype: "STRING"
+        comment: "UUID of the treating provider"
+      - source: "PAYER"
+        target: "payer_id"
+        target_datatype: "STRING"
+        comment: "UUID of the payer"
+      - source: "ENCOUNTERCLASS"
+        target: "encounter_class"
+        target_datatype: "STRING"
+        comment: "ambulatory, emergency, inpatient, urgentcare, wellness, outpatient"
+      - source: "CODE"
+        target: "encounter_code"
+        target_datatype: "STRING"
+        comment: "SNOMED-CT encounter type code"
+      - source: "DESCRIPTION"
+        target: "encounter_description"
+        target_datatype: "STRING"
+        comment: "Human-readable encounter type"
+      - source: "START"
+        target: "encounter_start_ts"
+        target_datatype: "TIMESTAMP"
+        comment: "Encounter start date and time (UTC)"
+      - source: "STOP"
+        target: "encounter_end_ts"
+        target_datatype: "TIMESTAMP"
+        comment: "Encounter end date and time (UTC); null if still open"
+      - source: "BASE_ENCOUNTER_COST"
+        target: "base_encounter_cost"
+        target_datatype: "DECIMAL(18,2)"
+        comment: "Base cost before line items"
+      - source: "TOTAL_CLAIM_COST"
+        target: "total_claim_cost"
+        target_datatype: "DECIMAL(18,2)"
+        comment: "Total cost including all line items"
+      - source: "PAYER_COVERAGE"
+        target: "payer_coverage"
+        target_datatype: "DECIMAL(18,2)"
+        comment: "Amount covered by payer"
+      - source: "REASONCODE"
+        target: "reason_code"
+        target_datatype: "STRING"
+        comment: "SNOMED-CT diagnosis code driving this encounter; null if not condition-targeted"
+      - source: "REASONDESCRIPTION"
+        target: "reason_description"
+        target_datatype: "STRING"
+        comment: "Description of the reason code"
+    expectations:
+      - name: "encounter_id_not_null"
+        condition: "encounter_id IS NOT NULL"
+        action: "FAIL UPDATE"
+      - name: "member_id_not_null"
+        condition: "member_id IS NOT NULL"
+        action: "FAIL UPDATE"
+      - name: "encounter_start_not_null"
+        condition: "encounter_start_ts IS NOT NULL"
+        action: "FAIL UPDATE"
+      - name: "non_negative_claim_cost"
+        condition: "total_claim_cost >= 0"
+        action: "WARN"
+
+  # --------------------------------------------------------------------------
+  # 3. PROVIDERS — SCD Type 2 (full history)
+  #
+  # Source: Synthea providers.csv — one full snapshot per daily file.
+  # Records are upserted with STORED AS SCD TYPE 2, so Databricks maintains
+  # __START_AT, __END_AT, and __IS_CURRENT alongside every version of each
+  # provider record, preserving the history of org affiliation, specialty,
+  # and address changes.
+  #
+  # Sequence column: source_file_modification_time — stable across reloads.
+  # --------------------------------------------------------------------------
+  - bronze_table_name: "enterprise_${env}.bronze.providers"
+    silver_table_name: "enterprise_${env}.silver.providers"
+    table_type: "scd2"
+    source_path: "/Volumes/enterprise_${env}/staging/example_raw_files_volume/providers"
+    source_file_type: "csv"
+    csv_options:
+      header: true
+      delimiter: ","
+    description: "Full provider history — SCD Type 2 tracks every change to org affiliation, specialty, and address."
+    cdc_conf:
+      keys: ["provider_id"]
+      sequence_by: "source_file_modification_time"
+    columns:
+      - source: "Id"
+        target: "provider_id"
+        target_datatype: "STRING"
+        comment: "Synthea provider UUID (CDC key)"
+      - source: "ORGANIZATION"
+        target: "organization_id"
+        target_datatype: "STRING"
+        comment: "UUID of the affiliated health system; tracked for history"
+      - source: "NAME"
+        target: "provider_name"
+        target_datatype: "STRING"
+        comment: "Provider full name"
+      - source: "GENDER"
+        target: "gender"
+        target_datatype: "STRING"
+        comment: "M or F"
+      - source: "SPECIALITY"
+        target: "specialty"
+        target_datatype: "STRING"
+        comment: "Clinical specialty; tracked for history"
+      - source: "ADDRESS"
+        target: "address"
+        target_datatype: "STRING"
+        comment: "Practice street address; tracked for history"
+      - source: "CITY"
+        target: "city"
+        target_datatype: "STRING"
+        comment: "City of practice"
+      - source: "STATE"
+        target: "state"
+        target_datatype: "STRING"
+        comment: "State of practice"
+      - source: "ZIP"
+        target: "zip_code"
+        target_datatype: "STRING"
+        comment: "ZIP code of practice"
+      - source: "LAT"
+        target: "latitude"
+        target_datatype: "DECIMAL(9,6)"
+        comment: "Practice latitude"
+      - source: "LON"
+        target: "longitude"
+        target_datatype: "DECIMAL(9,6)"
+        comment: "Practice longitude"
+      - source: "ENCOUNTERS"
+        target: "encounter_count"
+        target_datatype: "INTEGER"
+        comment: "Cumulative encounter count in Synthea"
+      - source: "PROCEDURES"
+        target: "procedure_count"
+        target_datatype: "INTEGER"
+        comment: "Cumulative procedure count in Synthea"
+    expectations:
+      - name: "provider_id_not_null"
+        condition: "provider_id IS NOT NULL"
+        action: "FAIL UPDATE"
+      - name: "valid_gender"
+        condition: "gender IN ('M', 'F')"
+        action: "WARN"
+
+  # --------------------------------------------------------------------------
+  # 4. OBSERVATIONS — Materialized View (latest numeric vital per patient)
+  #
+  # Source: Synthea observations.csv (vital-signs category only).
+  # Each daily file contains new observation records for patients seen that day.
+  #
+  # Bronze layer:  streaming table — all incoming vital-sign rows are appended.
+  # Silver layer:  materialized view — refreshes on every pipeline update to
+  #                show the single most-recent numeric reading per patient per
+  #                LOINC code (e.g. latest blood pressure, latest BMI, etc.).
+  #
+  # where_clause:   keeps only numeric observations (excludes text/component).
+  # qualify_clause: picks the latest row per (member_id, loinc_code) pair.
+  # --------------------------------------------------------------------------
+  - bronze_table_name: "enterprise_${env}.bronze.observations"
+    silver_table_name: "enterprise_${env}.silver.observations"
+    table_type: "materialized"
+    source_path: "/Volumes/enterprise_${env}/staging/example_raw_files_volume/observations"
+    source_file_type: "csv"
+    csv_options:
+      header: true
+      delimiter: ","
+    description: "Latest numeric vital sign per patient per LOINC code — materialized view refreshes on every pipeline run."
+    where_clause: "type = 'numeric'"
+    qualify_clause: "ROW_NUMBER() OVER(PARTITION BY member_id, loinc_code ORDER BY observation_ts DESC) = 1"
+    columns:
+      - source: "DATE"
+        target: "observation_ts"
+        target_datatype: "TIMESTAMP"
+        comment: "Date and time of the observation"
+      - source: "PATIENT"
+        target: "member_id"
+        target_datatype: "STRING"
+        comment: "FK to silver.providers and silver.patients"
+      - source: "ENCOUNTER"
+        target: "encounter_id"
+        target_datatype: "STRING"
+        comment: "FK to silver.encounters"
+      - source: "CATEGORY"
+        target: "category"
+        target_datatype: "STRING"
+        comment: "Observation category (always vital-signs in this table)"
+      - source: "CODE"
+        target: "loinc_code"
+        target_datatype: "STRING"
+        comment: "LOINC measurement code (e.g. 8302-2 for Body Height)"
+      - source: "DESCRIPTION"
+        target: "description"
+        target_datatype: "STRING"
+        comment: "Human-readable measurement name"
+      - source: "VALUE"
+        target: "value"
+        target_datatype: "STRING"
+        comment: "Observed value as string; cast to numeric downstream if needed"
+      - source: "UNITS"
+        target: "units"
+        target_datatype: "STRING"
+        comment: "Unit of measure (e.g. cm, kg, %)"
+      - source: "TYPE"
+        target: "type"
+        target_datatype: "STRING"
+        comment: "numeric or text — WHERE clause filters to numeric only"
+    expectations:
+      - name: "member_id_not_null"
+        condition: "member_id IS NOT NULL"
+        action: "FAIL UPDATE"
+      - name: "loinc_code_not_null"
+        condition: "loinc_code IS NOT NULL"
+        action: "FAIL UPDATE"
+      - name: "observation_ts_not_null"
+        condition: "observation_ts IS NOT NULL"
+        action: "FAIL UPDATE"

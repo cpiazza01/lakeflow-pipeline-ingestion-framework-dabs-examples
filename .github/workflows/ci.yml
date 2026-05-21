@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+      - "!main"   # merges to main fire their own push event; exclude to avoid double validate runs
+  pull_request:
+    branches:
+      - main
+
+# Cancel in-progress runs for the same branch when a new push arrives.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write   # required to request the GitHub OIDC token
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Detect changed bundles — finds which top-level directories containing a
+  # databricks.yml have changed files in this push or PR.
+  # ---------------------------------------------------------------------------
+  detect-changes:
+    name: Detect changed bundles
+    runs-on: ubuntu-latest
+    outputs:
+      bundles: ${{ steps.detect.outputs.bundles }}
+      any_changed: ${{ steps.detect.outputs.any_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed bundle directories
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          else
+            changed=$(git diff --name-only HEAD~1 HEAD)
+          fi
+
+          bundles=()
+          while IFS= read -r file; do
+            dir=$(echo "$file" | cut -d'/' -f1)
+            if [ -f "$dir/databricks.yml" ] && [[ ! " ${bundles[*]} " =~ " $dir " ]]; then
+              bundles+=("$dir")
+            fi
+          done <<< "$changed"
+
+          if [ ${#bundles[@]} -eq 0 ]; then
+            echo "any_changed=false" >> "$GITHUB_OUTPUT"
+            echo "bundles=[]" >> "$GITHUB_OUTPUT"
+          else
+            json=$(printf '%s\n' "${bundles[@]}" | jq -R . | jq -s -c .)
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+            echo "bundles=$json" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Validate — runs on every push and every PR to main, for each changed bundle.
+  # Generates the bundle artifacts with lakeflow-generate then runs bundle validate.
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate (${{ matrix.bundle }})
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any_changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        bundle: ${{ fromJson(needs.detect-changes.outputs.bundles) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: databricks/setup-cli@main
+
+      - name: Install DLT framework
+        run: pip install -r requirements.txt
+
+      - name: Generate bundle artifacts
+        working-directory: ${{ matrix.bundle }}
+        run: lakeflow-generate --config pipeline_config.yaml --env dev
+
+      - name: Validate bundle
+        working-directory: ${{ matrix.bundle }}
+        env:
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+        run: databricks bundle validate --target dev
+
+  # ---------------------------------------------------------------------------
+  # Deploy → dev — runs only on merges to main (not on feature branch pushes
+  # or PRs). Uses Databricks development mode so each developer's local deploy
+  # is prefixed with [dev <username>] and stays isolated.
+  # ---------------------------------------------------------------------------
+  deploy-dev:
+    name: Deploy → dev (${{ matrix.bundle }})
+    if: github.event_name == 'push' && needs.detect-changes.outputs.any_changed == 'true'
+    needs: [detect-changes, validate]
+    runs-on: ubuntu-latest
+    environment: dev
+    strategy:
+      matrix:
+        bundle: ${{ fromJson(needs.detect-changes.outputs.bundles) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: databricks/setup-cli@main
+
+      - name: Install DLT framework
+        run: pip install -r requirements.txt
+
+      - name: Generate bundle artifacts
+        working-directory: ${{ matrix.bundle }}
+        run: lakeflow-generate --config pipeline_config.yaml --env dev
+
+      - name: Deploy
+        working-directory: ${{ matrix.bundle }}
+        env:
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+        run: databricks bundle deploy --target dev
+
+  # ---------------------------------------------------------------------------
+  # Deploy → test — runs automatically after deploy-dev succeeds on a merge
+  # to main. No approval gate; test always reflects the current state of main.
+  # ---------------------------------------------------------------------------
+  deploy-test:
+    name: Deploy → test (${{ matrix.bundle }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.any_changed == 'true'
+    needs: [detect-changes, deploy-dev]
+    runs-on: ubuntu-latest
+    environment: test
+    strategy:
+      matrix:
+        bundle: ${{ fromJson(needs.detect-changes.outputs.bundles) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: databricks/setup-cli@main
+
+      - name: Install DLT framework
+        run: pip install -r requirements.txt
+
+      - name: Generate bundle artifacts
+        working-directory: ${{ matrix.bundle }}
+        run: lakeflow-generate --config pipeline_config.yaml --env test
+
+      - name: Deploy
+        working-directory: ${{ matrix.bundle }}
+        env:
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+        run: databricks bundle deploy --target test
