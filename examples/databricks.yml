@@ -54,14 +54,6 @@ resources:
             base_parameters:
               catalog: "${var.catalog}"
 
-  volumes:
-    staging_raw_files:
-      catalog_name: ${var.catalog}
-      schema_name: staging
-      name: example_raw_files_volume
-      volume_type: MANAGED
-      comment: "Managed volume for raw inbound files"
-
 # ---------------------------------------------------------------------------
 # Generated resource files from dlt-generate are included here.
 # Run `dlt-generate --config pipeline_config.yaml --env <env>` before deploying.
@@ -98,4 +90,3 @@ targets:
     variables:
       catalog: enterprise_prod
       warehouse_id: your_warehouse_id
-      
