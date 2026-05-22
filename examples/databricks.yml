@@ -56,11 +56,17 @@ resources:
 
 # ---------------------------------------------------------------------------
 # Generated resource files from dlt-generate are included here.
-# Run `dlt-generate --config pipeline_config.yaml --env <env>` before deploying.
+# Run `lakeflow-generate --config pipeline_config.yaml --env <env>` before deploying.
+# src/ and resources/ are gitignored (regenerated on every deploy), so sync.include
+# explicitly overrides that exclusion so the CLI still uploads them to the workspace.
 # ---------------------------------------------------------------------------
+sync:
+  include:
+    - src/**
+    - resources/**
+
 include:
   - resources/*.yml
-  - src/*.sql
 
 # ---------------------------------------------------------------------------
 # Targets
