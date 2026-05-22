@@ -2,18 +2,18 @@ bundle:
   name: lakeflow-pipeline-ingestion-framework-examples
 
 workspace:
-  root_path: /Workspace/${var.project}/.bundle/${bundle.name}/${bundle.target}
+  root_path: /Workspace/${var.domain}/.bundle/${bundle.name}/${bundle.target}
 
 # ---------------------------------------------------------------------------
 # Variables
 # ---------------------------------------------------------------------------
 variables:
 
-  project:
+  domain:
     description: >
-      Name of the Databricks project where this pipeline is developed.
+      Name of the Databricks domain where this pipeline is developed.
       This is used as a tag on all resources for cost attribution and discoverability.
-      Also used as part of the workspace root path, so the project folder must already exist in the workspace before deploying the bundle.
+      Also used as part of the workspace root path, so the domain folder must already exist in the workspace before deploying the bundle.
     default: lakeflow-pipeline-ingestion-framework-examples
 
   catalog:
