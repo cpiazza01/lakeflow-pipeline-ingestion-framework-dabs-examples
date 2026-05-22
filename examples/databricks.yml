@@ -46,7 +46,7 @@ variables:
 resources:
   jobs:
     setup_masking_functions:
-      name: "[${bundle.target}] Setup masking functions"
+      name: Setup masking functions
       tasks:
         - task_key: deploy_masking_functions
           notebook_task:
