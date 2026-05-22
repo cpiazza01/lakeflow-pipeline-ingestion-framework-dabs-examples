@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - "**"
-      - "!main"   # merges to main fire their own push event; exclude to avoid double validate runs
   pull_request:
     branches:
       - main
