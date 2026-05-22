@@ -21,7 +21,7 @@
 # ==============================================================================
 
 pipeline_name: lakeflow_pipeline_ingestion_framework_examples
-project: dlt-framework-examples
+project: lakeflow-pipeline-ingestion-framework-examples
 github_repo: github.com/your-org/dlt-dabs-framework-examples
 
 # ---------------------------------------------------------------------------
@@ -69,7 +69,6 @@ service_principal_job_runners: []
 # Unity Catalog tags applied to all tables in this pipeline
 # ---------------------------------------------------------------------------
 tags:
-  Project: "dlt-framework-examples"
   DataDomain: "ClinicalOperations"
   DataSource: "Synthea"
 

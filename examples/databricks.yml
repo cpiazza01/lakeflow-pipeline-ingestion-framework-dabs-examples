@@ -2,7 +2,7 @@ bundle:
   name: lakeflow-pipeline-ingestion-framework-examples
 
 workspace:
-  root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+  root_path: /Workspace/${workspace.current_user.short_name}/.bundle/${bundle.name}/${bundle.target}
 
 # ---------------------------------------------------------------------------
 # Variables
@@ -72,6 +72,8 @@ targets:
   local_dev:
     default: true
     mode: development   # prefixes all resources with [dev <username>] for per-developer isolation
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
       catalog: enterprise_dev
       warehouse_id: ad000a7468954636 
