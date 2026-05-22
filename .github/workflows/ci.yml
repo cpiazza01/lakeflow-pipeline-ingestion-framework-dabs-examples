@@ -94,6 +94,7 @@ jobs:
         env:
           DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
           DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_AUTH_TYPE: github-oidc
         run: databricks bundle validate --target dev
 
   # ---------------------------------------------------------------------------
@@ -132,6 +133,7 @@ jobs:
         env:
           DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
           DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_AUTH_TYPE: github-oidc
         run: databricks bundle deploy --target dev
 
   # ---------------------------------------------------------------------------
@@ -169,4 +171,5 @@ jobs:
         env:
           DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
           DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_AUTH_TYPE: github-oidc
         run: databricks bundle deploy --target test
