@@ -34,7 +34,7 @@ jobs:
 
       - uses: databricks/setup-cli@main
 
-      - name: Install DLT framework
+      - name: Install Lakeflow framework
         run: pip install -r requirements.txt
 
       - name: Generate bundle artifacts

@@ -1,4 +1,4 @@
-# DLT Ingestion Framework — Examples
+# Lakeflow Declarative Pipelines — Examples
 
 A collection of worked examples demonstrating different ingestion patterns using the [Lakeflow Pipeline Ingestion Framework](https://github.com/cpiazza01/lakeflow-pipeline-ingestion-framework-dabs).
 
