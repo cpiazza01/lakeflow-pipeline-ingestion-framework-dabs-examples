@@ -8,13 +8,13 @@ loading the next.
 
 ## Patients — SCD Type 1 (Upsert)
 
-**Batch sizes:** 70 → 75 → 106 patients
+**Batch sizes:** 60 → 80 → 106 patients (20 new in batch 2, 26 new in batch 3)
 
 After loading all three batches:
 
-- `silver.patients` row count == **106** (70 initial + 5 new in batch 2 + 31 new in batch 3)
-- After batch 2: 8 patients show updated `HEALTHCARE_EXPENSES`; 3 of those also show a new `ADDRESS`; 2 of those also show `MARITAL = 'M'` — old values must be gone (SCD1 keeps only current state)
-- After batch 3: 6 more patients show updated `HEALTHCARE_EXPENSES` and/or `ADDRESS`
+- `silver.patients` row count == **106** (final batch is a full snapshot of all patients)
+- After batch 2: previously loaded patients with changed fields (expenses, address, marital status) must show the new values — old values must be gone (SCD1 keeps only current state)
+- After batch 3: any further updates must be reflected; 26 additional patients must appear
 - No `patient_id` appears more than once:
   ```sql
   SELECT patient_id, COUNT(*) FROM silver.patients GROUP BY 1 HAVING COUNT(*) > 1
@@ -27,7 +27,7 @@ After loading all three batches:
 
 ## Encounters — Streaming (Append-Only)
 
-**Batch sizes:** ~1,643 / ~1,643 / ~1,644 records (non-overlapping, sorted by START date)
+**Batch sizes:** 1,643 / 1,643 / 1,644 records (non-overlapping, sorted by START date)
 
 After loading all three batches:
 
@@ -44,7 +44,7 @@ After loading all three batches:
 
 ## Observations — Materialized View (Latest Vital Signs)
 
-**Batch sizes:** three equal splits of vital-sign records, sorted by DATE
+**Batch sizes:** 4,027 / 4,027 / 4,027 vital-sign records (12,081 total source rows, sorted by DATE)
 
 After loading all three batches:
 
@@ -66,6 +66,8 @@ After loading all three batches:
 ---
 
 ## Providers — SCD Type 2 (History Tracking)
+
+**Batch sizes:** 40 / 40 / 40 providers (full snapshot each batch — changes between snapshots drive history rows)
 
 After loading all three batches:
 
