@@ -18,24 +18,26 @@ Source: Synthea `encounters.csv`. Each daily file contains a new batch of encoun
 
 ## Volume Structure
 
-The `raw_files` Volume is created by the bundle inside the pre-existing `staging` schema. Drop each dated sample-data subfolder into the corresponding Volume path to simulate daily arrivals:
+The `raw_files` Volume is created by the bundle inside the pre-existing `staging` schema. Upload each file from `sample-data/` into the corresponding Volume subdirectory to simulate daily arrivals:
 
 ```
 /Volumes/<catalog>/staging/raw_files/
-├── patients/                  <- SCD1 source; daily Synthea patient snapshot CSVs
-│   ├── 2024-01-01/
-│   │   └── patients.csv       (70 patients — initial load)
-│   ├── 2024-02-01/
-│   │   └── patients.csv       (75 patients — 8 updated + 5 new)
-│   └── 2024-03-01/
-│       └── patients.csv       (106 patients — 6 more updated + 31 new)
-└── encounters/                <- Streaming source; daily Synthea encounter CSVs
-    ├── 2024-01-01/
-    │   └── encounters.csv     (~1,643 records)
-    ├── 2024-02-01/
-    │   └── encounters.csv     (~1,643 records)
-    └── 2024-03-01/
-        └── encounters.csv     (~1,644 records)
+├── patients/                  <- SCD1; daily full patient snapshot
+│   ├── patients_2024-01-01.csv    (60 patients — initial load)
+│   ├── patients_2024-02-01.csv    (80 patients — 20 new + updated financials/address/marital)
+│   └── patients_2024-03-01.csv    (106 patients — 26 new + further updates)
+├── encounters/                <- Streaming; non-overlapping daily encounter batches
+│   ├── encounters_2024-01-01.csv  (1,643 records — 1938 to 2018)
+│   ├── encounters_2024-02-01.csv  (1,643 records — 2018 to 2022)
+│   └── encounters_2024-03-01.csv  (1,644 records — 2022 to 2026)
+├── observations/              <- Materialized view source; vital-sign observations
+│   ├── observations_2024-01-01.csv  (4,027 records — 1982 to 2020)
+│   ├── observations_2024-02-01.csv  (4,027 records — 2020 to 2023)
+│   └── observations_2024-03-01.csv  (4,027 records — 2023 to 2026)
+└── providers/                 <- SCD2; full provider snapshot each batch
+    ├── providers_2024-01-01.csv   (40 providers)
+    ├── providers_2024-02-01.csv   (40 providers — 6 changed organization)
+    └── providers_2024-03-01.csv   (40 providers — 6 different providers changed address/specialty)
 ```
 
 > The `staging` schema and catalog must already exist. Only the `raw_files` volume is provisioned by the bundle.

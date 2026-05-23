@@ -7,10 +7,12 @@
 #   1. SCD Type 1 (upsert)     — patients.csv   → members_current silver table
 #   2. Streaming (append-only) — encounters.csv → encounters silver table
 #
-# Sample data lives in lakeflow-pipeline-ingestion-framework-examples/sample-data/ — drop each date
-# subfolder into the corresponding Volume path to simulate daily file arrivals:
+# Sample data lives in sample-data/ — upload each file into the corresponding
+# Volume subdirectory to simulate daily file arrivals:
 #   /Volumes/enterprise_${env}/staging/example_raw_files_volume/patients/
 #   /Volumes/enterprise_${env}/staging/example_raw_files_volume/encounters/
+#   /Volumes/enterprise_${env}/staging/example_raw_files_volume/observations/
+#   /Volumes/enterprise_${env}/staging/example_raw_files_volume/providers/
 #
 # Usage:
 #   lakeflow-generate --config pipeline_config.yaml --env dev
